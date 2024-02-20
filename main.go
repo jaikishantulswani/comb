@@ -19,69 +19,76 @@ func main() {
 
 	flag.Parse()
 
-	if flag.NArg() < 2 {
+	if flag.NArg() < 2 || flag.NArg() > 4 {
 		flag.Usage()
 		os.Exit(1)
 	}
 
+	files := make([]io.Reader, flag.NArg())
 	var err error
-	var prefixFile io.Reader = os.Stdin
-	if f := flag.Arg(0); f != "-" {
-		prefixFile, err = os.Open(f)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(1)
-		}
-	}
-
-	var suffixFile io.Reader = os.Stdin
-	if f := flag.Arg(1); f != "-" {
-		suffixFile, err = os.Open(flag.Arg(1))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(1)
-		}
-	}
-
-	// use 'a' and 'b' because which is the prefix
-	// and which is the suffix depends on if we're in
-	// flip mode or not.
-	fileA := prefixFile
-	fileB := suffixFile
-
-	if flip {
-		fileA, fileB = fileB, fileA
-	}
-
-	// we need to read through the lines from fileB multiple
-	// times. If fileB is stdin then we can't seek back to
-	// the beginning of the input. To get around this, read
-	// fileB into a slice of strings instead.
-	bs := make([]string, 0)
-	sc := bufio.NewScanner(fileB)
-	for sc.Scan() {
-		bs = append(bs, sc.Text())
-	}
-
-	a := bufio.NewScanner(fileA)
-	for a.Scan() {
-
-		for _, b := range bs {
-			if flip {
-				fmt.Printf("%s%s%s\n", b, separator, a.Text())
-			} else {
-				fmt.Printf("%s%s%s\n", a.Text(), separator, b)
+	for i := 0; i < flag.NArg(); i++ {
+		if flag.Arg(i) == "-" {
+			files[i] = os.Stdin
+		} else {
+			files[i], err = os.Open(flag.Arg(i))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s\n", err)
+				os.Exit(1)
 			}
 		}
 	}
 
+	// Create a slice of slices to store lines from each file
+	lines := make([][]string, len(files))
+	for i, file := range files {
+		sc := bufio.NewScanner(file)
+		for sc.Scan() {
+			lines[i] = append(lines[i], sc.Text())
+		}
+	}
+
+	combineLines(lines, flip, separator)
+}
+
+func combineLines(lines [][]string, flip bool, separator string) {
+	// Generate combinations and print
+	for _, combo := range generateCombinations(lines) {
+		for i, line := range combo {
+			if flip {
+				fmt.Print(line, separator)
+			} else {
+				if i > 0 {
+					fmt.Print(separator)
+				}
+				fmt.Print(line)
+			}
+		}
+		fmt.Println()
+	}
+}
+
+func generateCombinations(lines [][]string) [][]string {
+	if len(lines) == 0 {
+		return [][]string{{}}
+	}
+
+	combinations := generateCombinations(lines[1:])
+	result := make([][]string, 0)
+
+	for _, prefix := range lines[0] {
+		for _, combo := range combinations {
+			result = append(result, append([]string{prefix}, combo...))
+		}
+	}
+
+	return result
 }
 
 func init() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Combine the lines from two files in every combination. Use '-' to read from stdin.\n\n")
+		fmt.Fprintf(os.Stderr, "Combine the lines from two to four files in every combination. Use '-' to read from stdin.\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n")
-		fmt.Fprintf(os.Stderr, "  comb [OPTIONS] [PREFIXFILE|-] [SUFFIXFILE|-]\n\n")
+		fmt.Fprintf(os.Stderr, "  comb [OPTIONS] [FILE1|-] [FILE2|-] [FILE3|-] [FILE4|-]\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -f, --flip             Flip mode (order by suffix)\n")
 		fmt.Fprintf(os.Stderr, "  -s, --separator <str>  String to place between prefix and suffix\n")
